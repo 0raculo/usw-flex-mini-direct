@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <title>Flex Mini Direct</title>
-  <link rel="stylesheet" href="/styles.css?v=0.1.0">
+  <link rel="stylesheet" href="/styles.css?v=0.2.0">
 </head>
 <body>
   <main class="login-shell" id="login-view">
@@ -61,6 +61,36 @@
           <p>O switch vai passar a enviar os seus informes para <code id="adopt-url"></code>. A ligação atual à UniFi será substituída.</p>
         </div>
         <button class="button dark" id="adopt-button" type="button">Adotar neste controlador</button>
+      </section>
+
+      <section class="discovery-panel">
+        <div class="section-head">
+          <div><p class="eyebrow">Bootstrap autónomo</p><h2>Descobrir e recuperar</h2></div>
+          <div class="discovery-actions">
+            <span id="discovery-meta">A pesquisar a rede…</span>
+            <button class="button quiet" id="discovery-button" type="button">Pesquisar agora</button>
+          </div>
+        </div>
+        <div id="discovery-list" class="discovery-list">
+          <p class="muted">Ainda não há resultados.</p>
+        </div>
+      </section>
+
+      <section class="recovery-panel" id="recovery-panel" hidden>
+        <div class="recovery-copy">
+          <p class="eyebrow">Recuperação automática</p>
+          <h2 id="recovery-title">Preparar switch</h2>
+          <p id="recovery-detail">O switch é redescoberto, adotado com uma chave própria e a configuração anterior é reposta.</p>
+          <div class="recovery-error" id="recovery-error" hidden></div>
+        </div>
+        <ol class="recovery-steps" id="recovery-steps">
+          <li data-step="armed"><span>01</span>Enviar reset</li>
+          <li data-step="waiting-factory"><span>02</span>Redescobrir em fábrica</li>
+          <li data-step="waiting-factory-inform"><span>03</span>Abrir canal TLS</li>
+          <li data-step="adopting"><span>04</span>Adotar com chave própria</li>
+          <li data-step="restoring"><span>05</span>Repor snapshot</li>
+          <li data-step="complete"><span>06</span>Validar</li>
+        </ol>
       </section>
 
       <section class="metrics" aria-label="Estado do equipamento">
@@ -119,11 +149,20 @@
         <div class="section-head"><div><p class="eyebrow">Histórico</p><h2>Snapshots</h2></div></div>
         <div id="snapshot-list" class="snapshot-list"><p class="muted">Ainda não existem alterações.</p></div>
       </section>
+
+      <section class="danger-zone" id="reset-panel" hidden>
+        <div>
+          <p class="eyebrow">Teste destrutivo</p>
+          <h2>Reset de fábrica com recuperação</h2>
+          <p>Cria um snapshot, envia o reset para o switch, volta a descobri-lo, adopta-o com uma chave própria e repõe a configuração guardada.</p>
+        </div>
+        <button class="button danger" id="reset-button" type="button">Reset e recuperar</button>
+      </section>
     </main>
 
-    <footer><span>Flex Direct 0.1</span><span>Comunicação local · sem telemetria</span></footer>
+    <footer><span>Flex Direct 0.2</span><span>Comunicação local · sem telemetria</span></footer>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=0.1.0" type="module"></script>
+  <script src="/app.js?v=0.2.0" type="module"></script>
 </body>
 </html>

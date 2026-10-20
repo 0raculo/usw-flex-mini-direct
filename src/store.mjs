@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { DEFAULT_KEY } from "./protocol.mjs";
 import { configFromSystemConfig } from "./policy.mjs";
 
 export class StateStore {
@@ -16,6 +17,7 @@ export class StateStore {
       baseline: null,
       pendingAdoption: null,
       pendingConfig: null,
+      recovery: null,
       lastError: null
     };
   }
@@ -68,6 +70,7 @@ export class StateStore {
       const displayModel = payload.model_display && payload.model_display !== payload.model
         ? payload.model_display
         : previous.modelDisplay || "USW Flex Mini";
+      const factoryRecovery = Boolean(meta.factoryReset && key === DEFAULT_KEY.toString("hex"));
       state.device = {
         ...previous,
         mac,
@@ -79,7 +82,7 @@ export class StateStore {
         hostname: payload.hostname || previous.hostname || "",
         uptime: Number(payload.uptime || 0),
         cfgversion: payload.cfgversion || previous.cfgversion || "",
-        defaultKey: Boolean(payload.default || payload._default_key),
+        defaultKey: factoryRecovery || Boolean(payload.default || payload._default_key),
         ports,
         switchCaps: payload.switch_caps || previous.switchCaps || {},
         key: key || previous.key,
@@ -87,13 +90,22 @@ export class StateStore {
         informUrl: meta.informUrl || state.device?.informUrl || "",
         remote: meta.remote || previous.remote || ""
       };
-      if (!previous.mac) {
+      if (factoryRecovery) {
+        state.device.adopted = false;
+        state.device.originDefault = true;
+        state.config = configFromSystemConfig(state.baseline, ports);
+        state.pendingAdoption = null;
+        state.pendingConfig = null;
+        delete state.device.nextKey;
+        delete state.device.wantAdoption;
+        delete state.device.adoptionSentAt;
+      } else if (!previous.mac) {
         state.device.adopted = false;
         state.device.originDefault = Boolean(payload.default || payload._default_key);
       }
       const inheritedKey = state.device.originDefault === undefined;
       if (inheritedKey) state.device.originDefault = false;
-      if (!state.device.originDefault && (!previous.mac || inheritedKey)) {
+      if (!factoryRecovery && !state.device.originDefault && (!previous.mac || inheritedKey)) {
         // A device already carrying a controller key can be managed directly once
         // its informs reach this process; no key rotation is required for cutover.
         state.device.adopted = true;
@@ -101,16 +113,16 @@ export class StateStore {
         delete state.device.nextKey;
         delete state.device.wantAdoption;
       }
-      if (state.pendingAdoption && key === state.pendingAdoption.key) {
+      if (!factoryRecovery && state.pendingAdoption && key === state.pendingAdoption.key) {
         state.device.key = key;
         state.device.adopted = true;
         delete state.device.nextKey;
         delete state.device.wantAdoption;
         state.pendingAdoption = null;
-      } else if (state.pendingAdoption) {
+      } else if (!factoryRecovery && state.pendingAdoption) {
         state.device.nextKey = state.pendingAdoption.key;
         state.device.wantAdoption = true;
-      } else if (state.device.nextKey && key === state.device.nextKey) {
+      } else if (!factoryRecovery && state.device.nextKey && key === state.device.nextKey) {
         state.device.key = key;
         state.device.adopted = true;
         delete state.device.nextKey;

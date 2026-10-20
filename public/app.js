@@ -101,6 +101,7 @@ function renderMirror() {
   const active = draft.ports.find((port) => port.mirrorSource !== null);
   source.replaceChildren();
   target.replaceChildren();
+  if (!draft.ports.length) return;
   for (const port of draft.ports) {
     const sourceOption = document.createElement("option");
     sourceOption.value = String(port.idx);
@@ -120,6 +121,100 @@ function renderMirror() {
   target.value = active ? String(active.idx) : "";
   source.value = String(active?.mirrorSource ?? draft.ports[0].idx);
   source.disabled = !active;
+}
+
+function renderDiscovery() {
+  const discovery = state.discovery;
+  const list = $("#discovery-list");
+  list.replaceChildren();
+  const activeRecovery = state.recovery && !state.recovery.terminal;
+  const meta = $("#discovery-meta");
+  if (!discovery.enabled) {
+    meta.textContent = "Descoberta desativada na configuração";
+  } else if (discovery.scanning) {
+    meta.textContent = "A pesquisar a rede…";
+  } else if (discovery.error) {
+    meta.textContent = discovery.error;
+  } else {
+    const when = discovery.lastScan ? new Date(discovery.lastScan).toLocaleTimeString("pt-PT") : "ainda não concluída";
+    meta.textContent = discovery.devices.length + " resultado" + (discovery.devices.length === 1 ? "" : "s") + " · " + when;
+  }
+  if (!discovery.devices.length) {
+    const empty = document.createElement("p");
+    empty.className = "muted";
+    empty.textContent = discovery.enabled
+      ? "Nenhum switch respondeu. Confirme DISCOVERY_TARGETS e o relay UDP entre a aplicação e a LAN do equipamento."
+      : "Configure DISCOVERY_TARGETS para procurar switches sem consola.";
+    list.append(empty);
+    return;
+  }
+  for (const device of discovery.devices) {
+    const row = document.createElement("article");
+    row.className = "discovered-device";
+    const identity = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = device.model || device.platform || "Dispositivo Ubiquiti";
+    const detail = document.createElement("small");
+    detail.textContent = (device.ip || "IP desconhecido") + " · " + device.mac + " · " + (device.firmware || "firmware desconhecido");
+    identity.append(title, detail);
+    const stateLabel = document.createElement("span");
+    stateLabel.className = "device-state " + (device.defaultKey ? "factory" : "managed");
+    stateLabel.textContent = device.defaultKey ? "Estado de fábrica" : device.managed ? "Gerido aqui" : "Já gerido noutro controlador";
+    row.append(identity, stateLabel);
+    if (device.defaultKey && !activeRecovery) {
+      const button = document.createElement("button");
+      button.className = "button dark";
+      button.type = "button";
+      button.textContent = "Adotar";
+      button.addEventListener("click", () => adoptDiscovered(device));
+      row.append(button);
+    }
+    list.append(row);
+  }
+}
+
+const recoveryDescriptions = {
+  armed: ["Reset preparado", "O snapshot está guardado. O pedido segue no próximo inform, em poucos segundos."],
+  "reset-sent": ["Reset enviado", "O switch está a reiniciar e vai voltar em estado de fábrica."],
+  "waiting-factory": ["À procura do switch", "A aplicação pesquisa o MAC na rede para encontrar o novo endereço em estado de fábrica."],
+  "channel-requested": ["A abrir canal", "A aplicação está a entregar o URL de gestão ao firmware de fábrica."],
+  "waiting-factory-inform": ["À espera da adoção", "O canal foi aberto. Falta receber o primeiro inform autenticado com a chave de fábrica."],
+  adopting: ["A adotar", "Uma chave própria foi preparada e o switch está a confirmar a nova configuração de gestão."],
+  restoring: ["A repor configuração", "A adoção foi confirmada. O snapshot anterior está a ser enviado e validado."],
+  complete: ["Recuperação concluída", "O switch voltou a ser gerido pela aplicação e a configuração anterior foi confirmada."],
+  failed: ["Recuperação interrompida", "O snapshot permanece guardado. Consulte o erro e tente novamente quando o switch voltar a comunicar."]
+};
+
+function renderRecovery() {
+  const recovery = state.recovery;
+  const panel = $("#recovery-panel");
+  const resetPanel = $("#reset-panel");
+  const active = Boolean(recovery && !recovery.terminal);
+  const device = state.device;
+  resetPanel.hidden = !device?.adopted || !device.online || active;
+  if (!recovery) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  const description = recoveryDescriptions[recovery.status] || [recovery.status, "A aplicação continua a acompanhar o switch."];
+  $("#recovery-title").textContent = description[0];
+  $("#recovery-detail").textContent = description[1];
+  const error = $("#recovery-error");
+  error.hidden = !recovery.lastError;
+  error.textContent = recovery.lastError || "";
+  const order = ["armed", "waiting-factory", "waiting-factory-inform", "adopting", "restoring", "complete"];
+  const aliases = { "reset-sent": "armed", "channel-requested": "waiting-factory-inform" };
+  const currentStatus = aliases[recovery.status] || recovery.status;
+  const currentIndex = order.indexOf(currentStatus);
+  const steps = [...$("#recovery-steps").children];
+  const restoreStep = steps.find((step) => step.dataset.step === "restoring");
+  if (restoreStep) restoreStep.classList.toggle("skipped", recovery.mode === "adopt");
+  for (const step of steps) {
+    const stepIndex = order.indexOf(step.dataset.step);
+    step.classList.toggle("done", recovery.status === "complete" || (currentIndex >= 0 && stepIndex < currentIndex));
+    step.classList.toggle("current", recovery.status !== "complete" && step.dataset.step === currentStatus);
+  }
 }
 
 function renderState() {
@@ -148,6 +243,8 @@ function renderState() {
   $("#adoption-panel").hidden = !device || device.adopted;
   $("#adopt-url").textContent = state.adoption.informUrl;
   renderPorts();
+  renderDiscovery();
+  renderRecovery();
   renderSnapshots();
   setDirty(dirty);
 }
@@ -256,6 +353,43 @@ async function adopt() {
   finally { button.disabled = false; }
 }
 
+async function adoptDiscovered(device) {
+  try {
+    await api("/api/adopt", { method: "POST", body: JSON.stringify({ mac: device.mac, ip: device.ip }) });
+    toast("Canal de adoção enviado. A aplicação acompanha o switch automaticamente.");
+    await refresh();
+  } catch (error) { toast(error.message, true); }
+}
+
+async function scanNow() {
+  const button = $("#discovery-button");
+  button.disabled = true;
+  button.textContent = "A pesquisar…";
+  try {
+    await api("/api/discovery", { method: "POST", body: "{}" });
+    await refresh();
+  } catch (error) { toast(error.message, true); }
+  finally {
+    button.disabled = false;
+    button.textContent = "Pesquisar agora";
+  }
+}
+
+async function resetAndRecover() {
+  const button = $("#reset-button");
+  button.disabled = true;
+  button.textContent = "A preparar reset…";
+  try {
+    const result = await api("/api/reset", { method: "POST", body: JSON.stringify({ mac: state.device.mac }) });
+    toast("Snapshot " + result.snapshot + " guardado. O reset segue no próximo inform.");
+    await refresh();
+  } catch (error) { toast(error.message, true); }
+  finally {
+    button.disabled = false;
+    button.textContent = "Reset e recuperar";
+  }
+}
+
 async function restore(id) {
   try {
     await api(`/api/snapshots/${encodeURIComponent(id)}/restore`, { method: "POST", body: "{}" });
@@ -277,6 +411,8 @@ $("#login-form").addEventListener("submit", async (event) => {
   } catch (error) { $("#login-error").textContent = error.message; }
 });
 $("#refresh-button").addEventListener("click", () => refresh());
+$("#discovery-button").addEventListener("click", scanNow);
+$("#reset-button").addEventListener("click", resetAndRecover);
 $("#adopt-button").addEventListener("click", adopt);
 $("#preview-button").addEventListener("click", preview);
 $("#apply-button").addEventListener("click", apply);
