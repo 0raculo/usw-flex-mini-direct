@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSession, cookieValue, ensureSecret, parseSession, safeEqual } from "./auth.mjs";
@@ -246,6 +247,17 @@ function factoryCandidate(recovery) {
   ));
 }
 
+function savedAddressCandidate(recovery, now = Date.now()) {
+  const ip = recovery.targetIp || store.state.device?.ip;
+  const mac = recovery.targetMac;
+  if (!ip || !mac) return null;
+  const waitFrom = recovery.status === "reset-sent"
+    ? recovery.resetSentAt || recovery.updatedAt
+    : recovery.updatedAt || recovery.startedAt;
+  if (now - Date.parse(waitFrom || 0) < config.recoverySavedAddressDelayMs) return null;
+  return { mac, ip, lastSeen: new Date(now).toISOString(), defaultKey: false, source: "saved-address" };
+}
+
 async function requestRecoveryChannel(device) {
   const current = store.state.recovery;
   if (!current || recoveryTerminal.has(current.status)) return;
@@ -295,11 +307,14 @@ async function advanceRecovery() {
     return;
   }
 
-  const candidate = factoryCandidate(recovery);
+  const discoveredCandidate = factoryCandidate(recovery);
+  const candidate = discoveredCandidate || savedAddressCandidate(recovery, now);
   if (candidate) {
     await updateRecovery({
       targetIp: candidate.ip,
-      factorySeenAt: recovery.factorySeenAt || new Date().toISOString()
+      ...(candidate.source === "saved-address"
+        ? { lastError: "Sem anúncio UDP; a tentar o último IP guardado." }
+        : { factorySeenAt: recovery.factorySeenAt || new Date().toISOString(), lastError: null })
     });
     if (["reset-sent", "waiting-factory"].includes(recovery.status)) {
       await updateRecovery({ status: "waiting-factory" });
@@ -547,12 +562,43 @@ async function api(req, res, url) {
     const input = await body(req);
     const requestedMac = String(input.mac || "").trim().toLowerCase().replaceAll("-", ":");
     if (requestedMac || input.ip) {
-      const target = discoveredDevices.get(requestedMac) || [...discoveredDevices.values()].find((device) => device.ip === input.ip);
-      if (!target) return json(res, 409, { error: "O switch indicado já não consta dos resultados da última descoberta. Execute uma nova pesquisa.", code: "DISCOVERY_STALE" });
-      if (!target.defaultKey) return json(res, 409, { error: "O switch descoberto não está em estado de fábrica; use o fluxo de reset e recuperação.", code: "NOT_FACTORY" });
-      if (store.state.device?.mac && store.state.device.mac !== target.mac) return json(res, 409, { error: "A aplicação já está ligada a outro switch.", code: "OTHER_DEVICE" });
+      const requestedIp = String(input.ip || "").trim();
+      const target = discoveredDevices.get(requestedMac) || [...discoveredDevices.values()].find((device) => device.ip === requestedIp);
+      if (!target && !(requestedMac && requestedIp)) {
+        return json(res, 409, { error: "Indique IP e MAC para adotar diretamente um switch em fábrica.", code: "ADDRESS_REQUIRED" });
+      }
+      if (!target && !/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(requestedMac)) {
+        return json(res, 400, { error: "O MAC indicado não é válido.", code: "INVALID_MAC" });
+      }
+      if (!target && net.isIP(requestedIp) === 0) {
+        return json(res, 400, { error: "O IP indicado não é válido.", code: "INVALID_IP" });
+      }
+      const adoptionTarget = target || {
+        mac: requestedMac,
+        ip: requestedIp,
+        lastSeen: new Date().toISOString(),
+        defaultKey: true,
+        source: "manual-address"
+      };
+      if (!adoptionTarget.defaultKey) return json(res, 409, { error: "O switch descoberto não está em estado de fábrica; use o fluxo de reset e recuperação.", code: "NOT_FACTORY" });
+      if (store.state.device?.mac && store.state.device.mac !== adoptionTarget.mac) return json(res, 409, { error: "A aplicação já está ligada a outro switch.", code: "OTHER_DEVICE" });
       if (store.state.recovery && !recoveryTerminal.has(store.state.recovery.status)) {
-        return json(res, 409, { error: "Já existe uma recuperação em curso.", code: "RECOVERY_ACTIVE" });
+        if (store.state.recovery.targetMac !== adoptionTarget.mac) {
+          return json(res, 409, { error: "Já existe uma recuperação em curso para outro switch.", code: "RECOVERY_ACTIVE" });
+        }
+        await updateRecovery({
+          targetIp: adoptionTarget.ip,
+          status: "waiting-factory",
+          channelAttempts: 0,
+          nextActionAt: null,
+          lastError: "Endereço atualizado durante a recuperação."
+        });
+        await audit(config.dataDir, { event: "recovery-address-updated", mac: adoptionTarget.mac, ip: adoptionTarget.ip });
+        await requestRecoveryChannel(adoptionTarget);
+        return json(res, 202, { accepted: true, updated: true, informUrl: config.informUrl, recovery: publicRecovery() });
+      }
+      if (store.state.device?.mac === adoptionTarget.mac && store.state.device.adopted) {
+        return json(res, 409, { error: "O switch indicado já está adotado por esta aplicação.", code: "ALREADY_ADOPTED" });
       }
       const startedAt = new Date().toISOString();
       await store.update((state) => {
@@ -560,16 +606,16 @@ async function api(req, res, url) {
           id: crypto.randomBytes(8).toString("hex"),
           mode: "adopt",
           status: "waiting-factory",
-          targetMac: target.mac,
-          targetIp: target.ip,
+          targetMac: adoptionTarget.mac,
+          targetIp: adoptionTarget.ip,
           startedAt,
           updatedAt: startedAt,
-          factorySeenAt: target.lastSeen,
+          factorySeenAt: target ? adoptionTarget.lastSeen : null,
           channelAttempts: 0
         };
       });
-      await audit(config.dataDir, { event: "recovery-armed", mode: "adopt", mac: target.mac, ip: target.ip });
-      await requestRecoveryChannel(target);
+      await audit(config.dataDir, { event: "recovery-armed", mode: "adopt", mac: adoptionTarget.mac, ip: adoptionTarget.ip, source: adoptionTarget.source || "discovery" });
+      await requestRecoveryChannel(adoptionTarget);
       return json(res, 202, { accepted: true, informUrl: config.informUrl, recovery: publicRecovery() });
     }
     if (!store.state.device) return json(res, 409, { error: "O switch ainda não enviou um inform. Confirme o endereço e a ligação." });

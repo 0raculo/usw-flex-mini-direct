@@ -32,6 +32,7 @@ export function readConfig(env = process.env) {
     controllerChannelPort: Number(env.CONTROLLER_CHANNEL_PORT || 22),
     controllerChannelTimeoutMs: Math.max(250, Number(env.CONTROLLER_CHANNEL_TIMEOUT_MS || 5000)),
     recoveryIntervalMs: Math.max(50, Number(env.RECOVERY_INTERVAL_MS || 5000)),
+    recoverySavedAddressDelayMs: Math.max(250, Number(env.RECOVERY_SAVED_ADDRESS_DELAY_MS || 12_000)),
     recoveryDarkTimeoutMs: Math.max(10_000, Number(env.RECOVERY_DARK_TIMEOUT_MS || 300_000)),
     sessionHours: Math.min(24, Math.max(1, Number(env.SESSION_HOURS || 12))),
     trustProxy: bool(env.TRUST_PROXY)

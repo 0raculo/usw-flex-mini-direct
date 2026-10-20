@@ -4,4 +4,7 @@ node_modules/
 *.pcap
 *.key
 *.log
+research/firmware/
+research/firmware-extract-*/
+research/ghidra/
 .DS_Store

@@ -4,19 +4,20 @@ Gestão local, experimental e independente do **Ubiquiti USW Flex Mini**. A apli
 
 ![Painel principal](docs/screenshots/02-dashboard.png)
 
-O projeto não usa uma conta ui.com, uma consola ligada ao switch ou uma instância UniFi Network. O switch e esta aplicação são os componentes necessários para gerir VLANs de acesso por porta e port mirroring. Quando os dois estão em sub-redes diferentes, são necessários relays TCP/UDP genéricos para transportar os anúncios e os informes.
+O projeto não usa uma conta ui.com, uma consola ligada ao switch ou uma instância UniFi Network. O switch e esta aplicação são os componentes necessários para gerir VLANs de acesso por porta e port mirroring. Quando estão em sub-redes diferentes, basta transportar os informes TCP; a adoção de um switch de fábrica pode ser iniciada diretamente pelo IP e MAC.
 
-> **Estado validado:** USW Flex Mini com firmware 2.1.6.762. Em 20 de outubro de 2026 foi executado no hardware o ciclo completo: descoberta, snapshot, reset de fábrica, reboot, redescoberta, adoção com uma chave própria e reposição da configuração anterior.
+> **Estado validado:** USW Flex Mini com firmware 2.1.6.762. O ciclo de snapshot, reset, TLS, adoção com chave própria e reposição foi validado no hardware. A recuperação sem anúncio UDP usa o último IP guardado e tem teste de integração próprio.
 
 ## O que funciona
 
-- descoberta ativa por UDP unicast de IPs ou intervalos CIDR;
-- recetor passivo de anúncios UDP quando o firmware só publica por broadcast;
+- adoção manual por IP e MAC, sem depender de broadcast ou consola;
+- recuperação pelo último IP guardado quando o switch não envia anúncio UDP;
+- descoberta UDP opcional e desativada no deployment de referência;
 - identificação por MAC, IP, modelo, firmware e estado de fábrica;
 - adoção de um switch já em estado de fábrica, sem ui.com nem consola;
 - reset de fábrica remoto de um switch atualmente gerido pela aplicação;
 - snapshot automático antes do reset;
-- redescoberta automática depois do reboot;
+- recovery pelo último endereço, ou por IP/MAC indicado manualmente, depois do reboot;
 - troca da chave pública de fábrica por uma chave privada própria;
 - reposição automática do snapshot e confirmação pelo cfgversion devolvido pelo switch;
 - VLAN de acesso (PVID) e nome por porta;
@@ -29,11 +30,11 @@ O projeto não usa uma conta ui.com, uma consola ligada ao switch ou uma instân
 
 A aplicação não contacta ui.com nem depende de uma instância UniFi Network. O fluxo de recuperação usa três mecanismos locais do próprio firmware:
 
-1. anúncio UDP na porta 10001, usado para descobrir o switch e confirmar o estado de fábrica;
+1. endereço IP e MAC conhecidos, usados para contactar diretamente um switch em fábrica;
 2. resposta inform cifrada, usada para gerir o equipamento e enviar o pedido de reset;
 3. ligação TLS JSON na porta 22 do firmware de fábrica, usada uma única vez para indicar o URL de gestão e a chave pública de adoção.
 
-Não é necessário instalar ou manter um controlador UniFi para operar o projeto. Os relays documentados abaixo são transporte de pacotes, não componentes de gestão.
+Não é necessário instalar ou manter um controlador UniFi para operar o projeto. O único relay usado no deployment de referência transporta os informes TCP entre sub-redes; não é um componente de gestão.
 
 ## Arquitetura
 
@@ -42,8 +43,6 @@ Não é necessário instalar ou manter um controlador UniFi para operar o projet
        v
     Flex Direct (Docker)  <---- inform TNBU ----  USW Flex Mini
        |                          |
-       |                          +---- UDP 10001 discovery
-       |
        +---- data/state.json, snapshots e auditoria
 
 O switch envia um envelope TNBU autenticado para o endpoint de inform. A aplicação prepara a configuração de gestão, entrega um novo system_cfg quando necessário e só apresenta uma alteração como aplicada quando o equipamento regressa com o cfgversion esperado.
@@ -62,13 +61,13 @@ Exemplo de configuração:
     INFORM_URL=http://192.168.1.22:8080/inform
     SWITCH_MAC=74:83:c2:0f:39:35
     AUTO_ADOPT=0
-    DISCOVERY_ENABLED=1
-    DISCOVERY_TARGETS=192.168.1.0/24
-    DISCOVERY_LISTEN_ENABLED=1
+    DISCOVERY_ENABLED=0
+    DISCOVERY_TARGETS=
+    DISCOVERY_LISTEN_ENABLED=0
     DISCOVERY_LISTEN_PORT=10001
     DISCOVERY_LISTEN_PUBLISH=10002
 
-O INFORM_URL tem de ser alcançável pelo switch. A aplicação publica a interface em 8789/TCP e o recetor passivo de descoberta em 10002/UDP por omissão.
+O INFORM_URL tem de ser alcançável pelo switch. A aplicação publica a interface em 8789/TCP. A descoberta UDP é opcional e está desligada por omissão; para a usar numa LAN acessível, defina DISCOVERY_ENABLED=1, DISCOVERY_TARGETS e o recetor passivo.
 
     docker compose up -d --build
     curl http://127.0.0.1:8789/api/health
@@ -84,7 +83,7 @@ Para desenvolvimento:
 
 ## Rede entre sub-redes
 
-O switch validado está em 192.168.1.0/24 e a aplicação em 192.168.69.0/24. O firmware anuncia-se por broadcast e não respondeu à sondagem UDP unicast usada por alguns outros equipamentos. Por isso, além do relay dos informes, existe um relay UDP mínimo para transportar os anúncios.
+O switch validado está em 192.168.1.0/24 e a aplicação em 192.168.69.0/24. O relay de informes TCP continua necessário para a gestão normal. O antigo relay de anúncios UDP foi desativado: não é necessário para a gestão nem para a recuperação pelo último IP. O limite é que a aplicação deixa de descobrir automaticamente um novo IP anunciado por broadcast noutra sub-rede.
 
 Relay dos informes no host 192.168.1.22:
 
@@ -107,37 +106,19 @@ Relay dos informes no host 192.168.1.22:
     [Install]
     WantedBy=multi-user.target
 
-Relay dos anúncios UDP no mesmo host:
-
-    [Unit]
-    Description=USW Flex Mini discovery broadcast relay
-    Wants=network-online.target
-    After=network-online.target
-
-    [Service]
-    Type=simple
-    ExecStart=/usr/bin/socat -u UDP4-RECVFROM:10001,broadcast,fork,reuseaddr UDP4-SENDTO:192.168.69.176:10002
-    Restart=on-failure
-    RestartSec=3
-    NoNewPrivileges=yes
-    PrivateTmp=yes
-    ProtectSystem=strict
-    ProtectHome=yes
-
-    [Install]
-    WantedBy=multi-user.target
-
-As versões completas dos dois units estão em deploy/usw-flex-mini-direct-relay.service e deploy/usw-discovery-relay.service.
-
-A aplicação também tenta sondagem unicast direta para os destinos DISCOVERY_TARGETS. O recetor passivo continua disponível em paralelo e é o caminho validado para o USW Flex Mini.
+O unit completo do relay de informes está em deploy/usw-flex-mini-direct-relay.service. O antigo unit de descoberta foi removido do repositório.
 
 ## Adotar um switch já de fábrica
 
-1. Configure o relay UDP e confirme que o estado do switch aparece como **Estado de fábrica** na secção **Descobrir e recuperar**.
-2. Clique em **Adotar**.
-3. A aplicação abre o canal TLS JSON na porta 22 e entrega o INFORM_URL.
+1. Com o switch em estado de fábrica e acessível por IP, abra **Descobrir e recuperar**.
+2. Preencha o IP e o MAC no formulário **Switch em fábrica já visível por IP** e confirme.
+3. A aplicação abre diretamente o canal TLS JSON na porta 22 e entrega o INFORM_URL.
 4. O primeiro inform de fábrica é autenticado com a chave pública do firmware.
 5. A aplicação responde com uma chave própria e confirma a adoção no inform seguinte.
+
+A descoberta UDP continua disponível como funcionalidade opcional, mas não é necessária. Um switch que já pertença a outro controlador não pode ser adotado desta forma sem uma chave compatível.
+
+Durante uma recuperação, o mesmo formulário aceita um novo IP para o MAC já em recuperação e reinicia as tentativas de abertura do canal TLS.
 
 O estado de recuperação fica visível na interface e é persistido em data/state.json. Fechar o browser não interrompe o processo.
 
@@ -148,7 +129,7 @@ A ação **Reset e recuperar** exige que o switch esteja atualmente gerido pela 
 1. A aplicação cria um snapshot com o motivo before-factory-reset.
 2. No inform seguinte envia o comando setdefault autenticado.
 3. O switch reinicia e volta ao estado de fábrica.
-4. A aplicação acompanha os anúncios UDP pelo MAC e encontra o novo endereço, se necessário.
+4. A aplicação procura o MAC nos anúncios, se a descoberta estiver ligada; sem anúncio, tenta o último IP guardado após RECOVERY_SAVED_ADDRESS_DELAY_MS.
 5. Entrega o URL de gestão pelo canal TLS de fábrica.
 6. Recebe o primeiro inform com a chave pública e gera uma chave privada própria.
 7. Confirma a adoção no inform seguinte.
@@ -183,7 +164,7 @@ A interface usa uma API JSON no mesmo processo. Depois do login, os pedidos usam
 | POST /api/login | Cria a sessão e devolve o token CSRF |
 | GET /api/state | Estado completo, descoberta, recuperação e snapshots |
 | POST /api/discovery | Executa uma nova varredura |
-| POST /api/adopt | Adota um switch de fábrica, por inform ou pelo MAC/IP descoberto |
+| POST /api/adopt | Adota um switch por inform, por resultado de descoberta ou diretamente por IP e MAC |
 | POST /api/reset | Cria snapshot e arma reset com recuperação automática |
 | POST /api/preview | Valida um rascunho e lista alterações |
 | POST /api/apply | Aplica um rascunho previamente revisto |
@@ -194,11 +175,12 @@ O endpoint /inform pertence ao protocolo do switch e não é uma API administrat
 ## Limitações reais
 
 - O reset remoto exige que o switch esteja atualmente gerido por esta aplicação. Um switch cuja chave se perdeu tem de ser encaminhado novamente para o inform ou recuperado a partir de uma cópia de data/.
-- O firmware validado publica descoberta por broadcast. Entre sub-redes é necessário o relay UDP; a aplicação não recebe broadcast de outra LAN através do Docker sem esse transporte.
+- Sem descoberta UDP entre sub-redes, um reset só é recuperado automaticamente se o switch mantiver o IP guardado. Se o DHCP mudar o IP, é necessário indicar o novo IP e MAC no formulário de adoção manual.
 - Não há upload ou flash de firmware na aplicação. A versão instalada pode ser consultada, mas upgrade continua a exigir um mecanismo externo compatível.
 - O USW Flex Mini expõe PVID/VLAN nativa por porta, mas não permite configurar VLANs marcadas ou um modo trunk geral pela aplicação validada.
 - STP e RSTP não são configuráveis no hardware validado, apesar de aparecerem em algumas interfaces UniFi.
 - IGMP snooping não é configurável neste modelo.
+- A investigação de firmware próprio está documentada em [docs/firmware-feasibility.md](docs/firmware-feasibility.md). Nenhum firmware alternativo foi instalado; a falta de recuperação física mantém essa via bloqueada.
 - Port mirroring suporta uma sessão e não pode usar a porta de uplink como destino.
 - A porta 1 é tratada como uplink protegido para preservar a gestão; o projeto não modifica a sua VLAN nem a usa como destino de mirroring.
 - Os snapshots cobrem a configuração de portas. Não incluem firmware, credenciais do antigo controlador, DHCP ou configuração externa da rede.
@@ -223,7 +205,7 @@ O fluxo de fábrica usa as credenciais públicas ubnt/ubnt e a chave pública do
 
     npm test
 
-A suite atual tem 16 testes e cobre:
+A suite atual tem 20 testes e cobre:
 
 - codificação e descodificação TNBU em AES-GCM e AES-CBC;
 - política de VLAN e proteção do uplink;
@@ -232,19 +214,27 @@ A suite atual tem 16 testes e cobre:
 - expansão de CIDR e sondagem UDP unicast;
 - recetor passivo de anúncios;
 - payload TLS JSON do canal de fábrica;
-- ciclo HTTP completo de reset, descoberta, TLS, adoção, chave própria e reposição do snapshot.
+- parser e validação CRC de imagens USMINI;
+- adoção manual por IP/MAC, incluindo validação de endereços;
+- ciclo HTTP completo de reset, TLS, adoção, chave própria e reposição do snapshot sem anúncio UDP.
 
 No hardware de referência foram validados manualmente:
 
-- descoberta do anúncio de fábrica por relay UDP;
+- adoção de fábrica pelo endereço IP e MAC, sem relay UDP;
 - snapshot antes do reset;
 - envio de setdefault e reboot;
-- redescoberta do mesmo MAC;
+- recuperação pelo último IP guardado;
 - abertura do canal TLS e primeiro inform com chave de fábrica;
 - troca para chave própria e confirmação da adoção;
 - reposição do snapshot e cfgversion;
 - recuperação do relay de informes;
 - estado final online e configurado após o ciclo.
+
+O teste destrutivo completo pode ser repetido contra um switch já gerido com o último IP estável:
+
+    ADMIN_PASSWORD='...' BASE_URL='http://192.168.69.176:8789' npm run smoke
+
+O script cria um snapshot, envia reset, acompanha a recuperação e falha se o estado final não for complete.
 
 ## Referências
 
@@ -253,6 +243,8 @@ No hardware de referência foram validados manualmente:
 - [lucavb/open-unifi](https://github.com/lucavb/open-unifi) — documentação pública do protocolo inform e do ciclo de vida de reset;
 - [HostiFi discovery tool](https://github.com/HostiFi/hostifi-device-discovery-tool-releases) — referência do canal TLS JSON do Flex Mini;
 - [finngineering/usw-flex-mini](https://github.com/finngineering/usw-flex-mini) — notas de hardware e mirroring;
-- [datasheet do USW Flex Mini](https://dl.ui.com/ds/usw-flex-mini_ds.pdf).
+- [datasheet do USW Flex Mini](https://dl.ui.com/ds/usw-flex-mini_ds.pdf);
+- [RTL8367RB datasheet](https://openwrt.org/_media/media/datasheets/switch/rtl8367rb-cg.pdf);
+- [noodlefighter/rtl8367b-api-test](https://github.com/noodlefighter/rtl8367b-api-test) e [zhai-dada/RTL8367-SDK](https://github.com/zhai-dada/RTL8367-SDK) — referências de controlo do switch Realtek, sem código incorporado neste projeto.
 
 O protocolo foi implementado a partir de observação do equipamento e documentação pública. Este projeto não é afiliado à Ubiquiti. Licença MIT; consulte [LICENSE](LICENSE).

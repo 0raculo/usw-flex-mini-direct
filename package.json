@@ -1,6 +1,6 @@
 {
   "name": "usw-flex-mini-direct",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Controlador local experimental para UniFi USW Flex Mini, sem UniFi Network",
@@ -14,7 +14,8 @@
   },
   "scripts": {
     "start": "node src/server.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "smoke": "node scripts/smoke-hardware.mjs"
   },
   "engines": {
     "node": ">=20"

@@ -4,165 +4,147 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>Flex Mini Direct</title>
-  <link rel="stylesheet" href="/styles.css?v=0.2.0">
+  <title>Flex Direct</title>
+  <link rel="stylesheet" href="/styles.css?v=0.3.0">
 </head>
 <body>
-  <main class="login-shell" id="login-view">
-    <section class="login-card">
-      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
-      <p class="eyebrow">Controlador independente</p>
-      <h1>O seu switch.<br>Sem a nuvem.</h1>
-      <p class="login-copy">Gestão local do USW Flex Mini por uma ligação direta ao equipamento.</p>
-      <form id="login-form">
-        <label for="password">Palavra-passe de administração</label>
-        <div class="field-row">
-          <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
-          <button class="button primary" type="submit">Entrar</button>
-        </div>
-        <p class="form-error" id="login-error" role="alert"></p>
-      </form>
-      <div class="login-foot"><span class="pulse"></span><span id="login-device">À procura do switch…</span></div>
-    </section>
-    <aside class="login-aside">
-      <span class="index">01</span>
-      <h2>Um caminho direto entre o browser e o hardware.</h2>
-      <p>Sem UniFi Network, sem conta na nuvem e sem consola. O equipamento fala diretamente com esta aplicação.</p>
-      <div class="route-line"><span>Browser</span><i></i><span>Flex Mini</span></div>
-    </aside>
+  <main class="login" id="login-view">
+    <form class="card login-card" id="login-form">
+      <div class="wordmark"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><strong>Flex Direct</strong></div>
+      <p class="muted">Gestão local do USW Flex Mini, sem consola nem nuvem.</p>
+      <label for="password">Palavra-passe de administração</label>
+      <div class="field-row">
+        <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+        <button class="button primary" type="submit">Entrar</button>
+      </div>
+      <p class="form-error" id="login-error" role="alert"></p>
+      <p class="login-device"><span class="dot" id="login-dot"></span><span id="login-device">À procura do switch…</span></p>
+    </form>
   </main>
 
-  <div id="app-view" class="app-shell" hidden>
+  <div id="app-view" class="app" hidden>
     <header class="topbar">
-      <a class="wordmark" href="#"><span class="brand-mark small" aria-hidden="true"><span></span><span></span><span></span><span></span></span><strong>Flex Direct</strong><small>LOCAL CONTROL</small></a>
+      <div class="wordmark"><span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span><strong>Flex Direct</strong></div>
       <div class="top-actions">
-        <span class="connection" id="connection-pill"><span class="pulse"></span><span>À espera</span></span>
+        <span class="pill" id="connection-pill"><span class="dot"></span><span>À espera</span></span>
         <button class="button quiet" id="refresh-button" type="button">Atualizar</button>
       </div>
     </header>
 
-    <main class="dashboard">
-      <section class="hero">
+    <main>
+      <section class="card device">
         <div>
-          <p class="eyebrow">Controlo direto · inform</p>
           <h1 id="device-title">USW Flex Mini</h1>
-          <p class="hero-copy" id="device-subtitle">A estabelecer comunicação com o equipamento.</p>
+          <p class="muted" id="device-subtitle">A estabelecer comunicação com o equipamento.</p>
         </div>
-        <div class="device-stamp">
-          <span id="device-ip">—</span>
-          <small id="device-firmware">Firmware —</small>
-        </div>
+        <dl class="facts">
+          <div><dt>Estado</dt><dd id="fact-state">—</dd></div>
+          <div><dt>IP</dt><dd id="fact-ip">—</dd></div>
+          <div><dt>Firmware</dt><dd id="fact-firmware">—</dd></div>
+          <div><dt>Configuração</dt><dd id="fact-config">—</dd></div>
+        </dl>
       </section>
 
-      <section class="notice" id="adoption-panel" hidden>
+      <section class="card notice" id="adoption-panel" hidden>
         <div>
-          <span class="notice-label">Ação necessária</span>
-          <h2>Adotar diretamente nesta aplicação</h2>
-          <p>O switch vai passar a enviar os seus informes para <code id="adopt-url"></code>. A ligação atual à UniFi será substituída.</p>
+          <h2>Adotar nesta aplicação</h2>
+          <p class="muted">O switch passa a enviar os informes para <code id="adopt-url"></code>. A ligação atual à UniFi é substituída.</p>
         </div>
-        <button class="button dark" id="adopt-button" type="button">Adotar neste controlador</button>
+        <button class="button primary" id="adopt-button" type="button">Adotar</button>
       </section>
 
-      <section class="discovery-panel">
-        <div class="section-head">
-          <div><p class="eyebrow">Bootstrap autónomo</p><h2>Descobrir e recuperar</h2></div>
-          <div class="discovery-actions">
-            <span id="discovery-meta">A pesquisar a rede…</span>
-            <button class="button quiet" id="discovery-button" type="button">Pesquisar agora</button>
-          </div>
+      <section class="card recovery" id="recovery-panel" hidden>
+        <div>
+          <h2 id="recovery-title">Recuperação</h2>
+          <p class="muted" id="recovery-detail"></p>
+          <p class="error-box" id="recovery-error" hidden></p>
         </div>
-        <div id="discovery-list" class="discovery-list">
-          <p class="muted">Ainda não há resultados.</p>
-        </div>
-      </section>
-
-      <section class="recovery-panel" id="recovery-panel" hidden>
-        <div class="recovery-copy">
-          <p class="eyebrow">Recuperação automática</p>
-          <h2 id="recovery-title">Preparar switch</h2>
-          <p id="recovery-detail">O switch é redescoberto, adotado com uma chave própria e a configuração anterior é reposta.</p>
-          <div class="recovery-error" id="recovery-error" hidden></div>
-        </div>
-        <ol class="recovery-steps" id="recovery-steps">
-          <li data-step="armed"><span>01</span>Enviar reset</li>
-          <li data-step="waiting-factory"><span>02</span>Redescobrir em fábrica</li>
-          <li data-step="waiting-factory-inform"><span>03</span>Abrir canal TLS</li>
-          <li data-step="adopting"><span>04</span>Adotar com chave própria</li>
-          <li data-step="restoring"><span>05</span>Repor snapshot</li>
-          <li data-step="complete"><span>06</span>Validar</li>
+        <ol class="steps" id="recovery-steps">
+          <li data-step="armed">Enviar reset</li>
+          <li data-step="waiting-factory">Encontrar em fábrica</li>
+          <li data-step="waiting-factory-inform">Abrir canal TLS</li>
+          <li data-step="adopting">Adotar com chave própria</li>
+          <li data-step="restoring">Repor snapshot</li>
+          <li data-step="complete">Validar</li>
         </ol>
       </section>
 
-      <section class="metrics" aria-label="Estado do equipamento">
-        <article><span>Estado</span><strong id="metric-state">—</strong><small id="metric-seen">Último contacto</small></article>
-        <article><span>Modelo</span><strong id="metric-model">—</strong><small id="metric-serial">Número de série</small></article>
-        <article><span>Uplink</span><strong id="metric-uplink">—</strong><small>Porta de gestão protegida</small></article>
-        <article><span>Configuração</span><strong id="metric-config">Local</strong><small id="metric-operation">Sem operações pendentes</small></article>
-      </section>
-
-      <section class="workbench">
-        <div class="section-head">
-          <div><p class="eyebrow">Camada 2</p><h2>VLANs por porta</h2></div>
-          <p>Cada porta funciona como acesso a uma única VLAN. O uplink mantém a VLAN 1 para preservar a gestão.</p>
+      <section class="card">
+        <div class="card-head">
+          <h2>Portas</h2>
+          <p class="muted">VLAN de acesso por porta. Sem trunk, STP ou IGMP snooping neste modelo.</p>
         </div>
         <div class="port-list" id="port-list"></div>
-      </section>
-
-      <section class="mirror-panel">
-        <div>
-          <p class="eyebrow">Diagnóstico</p>
-          <h2>Espelhamento de porta</h2>
-          <p>Copia o tráfego de uma porta para outra sem interromper o tráfego original.</p>
-        </div>
-        <div class="mirror-controls">
-          <label>Porta de origem<select id="mirror-source"></select></label>
-          <span class="arrow" aria-hidden="true">→</span>
-          <label>Porta de destino<select id="mirror-target"></select></label>
+        <div class="mirror">
+          <span>Espelhamento</span>
+          <label>Origem <select id="mirror-source"></select></label>
+          <span aria-hidden="true">→</span>
+          <label>Destino <select id="mirror-target"></select></label>
         </div>
       </section>
 
-      <section class="capability-grid">
-        <article class="supported"><span class="status-dot"></span><div><strong>VLAN de acesso</strong><p>Configuração de PVID por porta, validada no hardware.</p></div><b>Suportado</b></article>
-        <article class="supported"><span class="status-dot"></span><div><strong>Port mirroring</strong><p>Uma sessão de cópia de tráfego para observação.</p></div><b>Suportado</b></article>
-        <article><span class="status-dot"></span><div><strong>STP / RSTP</strong><p>O USW Flex Mini não implementa spanning tree, apesar de a UI UniFi o apresentar.</p></div><b>Não suportado</b></article>
-        <article><span class="status-dot"></span><div><strong>IGMP e VLANs marcadas</strong><p>O controlador rejeita modos trunk neste modelo; não há snooping configurável.</p></div><b>Não suportado</b></article>
-      </section>
-
-      <section class="action-bar" id="action-bar" hidden>
-        <div><strong>Alterações por aplicar</strong><p id="action-count">—</p></div>
-        <div>
-          <button class="button quiet" id="discard-button" type="button">Descartar</button>
-          <button class="button primary" id="preview-button" type="button">Rever alterações</button>
+      <section class="card review" id="review-panel" hidden>
+        <div class="card-head">
+          <h2>Alterações a enviar</h2>
+          <button class="icon-button" id="close-review" type="button" aria-label="Fechar">×</button>
         </div>
-      </section>
-
-      <section class="review-panel" id="review-panel" hidden>
-        <div class="section-head"><div><p class="eyebrow">Confirmação</p><h2>Alterações a enviar</h2></div><button class="icon-button" id="close-review" type="button" aria-label="Fechar">×</button></div>
         <ul id="change-list"></ul>
-        <div class="confirmation">
-          <p>É criado um snapshot antes de enviar. A aplicação só confirma a alteração quando o switch devolve a nova versão de configuração.</p>
-          <button class="button dark" id="apply-button" type="button">Aplicar no switch</button>
+        <div class="row">
+          <p class="muted">É criado um snapshot antes de enviar. A alteração só fica confirmada quando o switch devolve a nova versão de configuração.</p>
+          <button class="button primary" id="apply-button" type="button">Aplicar no switch</button>
         </div>
       </section>
 
-      <section class="history">
-        <div class="section-head"><div><p class="eyebrow">Histórico</p><h2>Snapshots</h2></div></div>
-        <div id="snapshot-list" class="snapshot-list"><p class="muted">Ainda não existem alterações.</p></div>
+      <section class="card">
+        <div class="card-head"><h2>Snapshots</h2></div>
+        <div id="snapshot-list" class="list"><p class="muted">Ainda não existem snapshots.</p></div>
       </section>
 
-      <section class="danger-zone" id="reset-panel" hidden>
-        <div>
-          <p class="eyebrow">Teste destrutivo</p>
-          <h2>Reset de fábrica com recuperação</h2>
-          <p>Cria um snapshot, envia o reset para o switch, volta a descobri-lo, adopta-o com uma chave própria e repõe a configuração guardada.</p>
+      <details class="card" id="maintenance">
+        <summary><h2>Adoção e recuperação</h2><span class="muted" id="maintenance-meta"></span></summary>
+
+        <div class="sub">
+          <div class="card-head">
+            <h3>Descoberta UDP</h3>
+            <div class="row tight">
+              <span class="muted" id="discovery-meta"></span>
+              <button class="button quiet" id="discovery-button" type="button">Pesquisar</button>
+            </div>
+          </div>
+          <div id="discovery-list" class="list"></div>
         </div>
-        <button class="button danger" id="reset-button" type="button">Reset e recuperar</button>
-      </section>
+
+        <form class="sub manual-adopt" id="manual-adopt-form">
+          <div>
+            <h3>Switch em fábrica por IP</h3>
+            <p class="muted">Adota um switch em fábrica ou atualiza o IP durante uma recuperação.</p>
+          </div>
+          <label>IP<input id="manual-adopt-ip" name="ip" inputmode="decimal" placeholder="192.168.1.96" required></label>
+          <label>MAC<input id="manual-adopt-mac" name="mac" placeholder="74:83:c2:0f:39:35" pattern="([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}" required></label>
+          <button class="button" type="submit">Adotar</button>
+        </form>
+
+        <div class="sub danger row" id="reset-panel" hidden>
+          <div>
+            <h3>Reset de fábrica com recuperação</h3>
+            <p class="muted">Guarda um snapshot, faz reset, volta a adotar o switch com uma chave própria e repõe a configuração.</p>
+          </div>
+          <button class="button danger" id="reset-button" type="button">Reset e recuperar</button>
+        </div>
+      </details>
     </main>
 
-    <footer><span>Flex Direct 0.2</span><span>Comunicação local · sem telemetria</span></footer>
+    <div class="action-bar" id="action-bar" hidden>
+      <span>Alterações por aplicar</span>
+      <div class="row tight">
+        <button class="button quiet" id="discard-button" type="button">Descartar</button>
+        <button class="button primary" id="preview-button" type="button">Rever</button>
+      </div>
+    </div>
+
+    <footer class="muted">Flex Direct 0.3 · comunicação local, sem telemetria</footer>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script src="/app.js?v=0.2.0" type="module"></script>
+  <script src="/app.js?v=0.3.0" type="module"></script>
 </body>
 </html>

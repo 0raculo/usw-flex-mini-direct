@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import dgram from "node:dgram";
 import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
@@ -22,35 +21,6 @@ function freePort() {
       server.close(() => resolve(port));
     });
   });
-}
-
-function freeUdpPort() {
-  return new Promise((resolve, reject) => {
-    const socket = dgram.createSocket("udp4");
-    socket.once("error", reject);
-    socket.bind(0, "127.0.0.1", () => {
-      const { port } = socket.address();
-      socket.close(() => resolve(port));
-    });
-  });
-}
-
-function tlv(type, value) {
-  const data = Buffer.isBuffer(value) ? value : Buffer.from(String(value));
-  return Buffer.concat([Buffer.from([type, data.length >> 8, data.length & 0xff]), data]);
-}
-
-function discoveryPacket() {
-  const macBytes = mac.split(":").map((part) => Number.parseInt(part, 16));
-  const payload = Buffer.concat([
-    tlv(2, Buffer.from([...macBytes, 127, 0, 0, 1])),
-    tlv(1, Buffer.from(macBytes)),
-    tlv(3, "6.6.55"),
-    tlv(0x0b, "USW-Factory"),
-    tlv(0x15, "USMINI"),
-    tlv(0x17, Buffer.from([1]))
-  ]);
-  return Buffer.concat([Buffer.from([2, 6, payload.length >> 8, payload.length & 0xff]), payload]);
 }
 
 async function waitForServer(url, child) {
@@ -77,7 +47,7 @@ async function waitUntil(check, timeoutMs = 5000) {
   throw new Error("Condição não foi atingida.");
 }
 
-test("descoberta, reset, TLS, adoção e reposição do snapshot formam um ciclo completo", async (t) => {
+test("reset, TLS, adoção e reposição funcionam pelo último IP sem descoberta UDP", async (t) => {
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "usw-recovery-test-"));
   const keyFile = path.join(dataDir, "bootstrap.key");
   await fs.writeFile(keyFile, key, { mode: 0o600 });
@@ -89,11 +59,6 @@ test("descoberta, reset, TLS, adoção e reposição do snapshot formam um ciclo
     "-subj", "/CN=127.0.0.1", "-days", "1"
   ], { stdio: "ignore" });
   if (generated.status !== 0) throw new Error("openssl não conseguiu criar o certificado de teste.");
-
-  const discoveryPort = await freeUdpPort();
-  const responder = dgram.createSocket("udp4");
-  await new Promise((resolve) => responder.bind(discoveryPort, "127.0.0.1", resolve));
-  responder.on("message", (_message, remote) => responder.send(discoveryPacket(), remote.port, remote.address));
 
   let channelRequest = null;
   const channel = tls.createServer({
@@ -122,15 +87,12 @@ test("descoberta, reset, TLS, adoção e reposição do snapshot formam um ciclo
       SWITCH_MAC: mac,
       BOOTSTRAP_KEY_FILE: keyFile,
       ADMIN_PASSWORD: password,
-      DISCOVERY_ENABLED: "1",
+      DISCOVERY_ENABLED: "0",
       DISCOVERY_LISTEN_ENABLED: "0",
-      DISCOVERY_TARGETS: "127.0.0.1",
-      DISCOVERY_PORT: String(discoveryPort),
-      DISCOVERY_TIMEOUT_MS: "120",
-      DISCOVERY_INTERVAL_MS: "1000",
       CONTROLLER_CHANNEL_PORT: String(channel.address().port),
       CONTROLLER_CHANNEL_TIMEOUT_MS: "500",
       RECOVERY_INTERVAL_MS: "50",
+      RECOVERY_SAVED_ADDRESS_DELAY_MS: "100",
       RECOVERY_DARK_TIMEOUT_MS: "10000"
     },
     stdio: ["ignore", "ignore", "pipe"]
@@ -138,7 +100,6 @@ test("descoberta, reset, TLS, adoção e reposição do snapshot formam um ciclo
   t.after(async () => {
     child.kill("SIGTERM");
     await new Promise((resolve) => child.once("exit", resolve));
-    await new Promise((resolve) => responder.close(resolve));
     await new Promise((resolve) => channel.close(resolve));
     await fs.rm(dataDir, { recursive: true });
   });
@@ -257,6 +218,132 @@ test("descoberta, reset, TLS, adoção e reposição do snapshot formam um ciclo
   assert.equal(complete.config.ports.find((item) => item.idx === 2).vlan, 42);
   assert.equal(complete.device.adopted, true);
   assert.equal(complete.device.defaultKey, false);
-  assert.equal(complete.discovery.devices.find((device) => device.mac === mac).defaultKey, false);
+  assert.equal(complete.discovery.enabled, false);
   assert.equal(complete.recovery.snapshotId, reset.snapshot);
+});
+
+test("adoção manual por IP e MAC valida o endereço e abre o canal sem descoberta", async (t) => {
+  const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), "usw-manual-adopt-test-"));
+  const keyFile = path.join(dataDir, "bootstrap.key");
+  await fs.writeFile(keyFile, key, { mode: 0o600 });
+  const certificate = path.join(dataDir, "cert.pem");
+  const certificateKey = path.join(dataDir, "key.pem");
+  const generated = spawnSync("openssl", [
+    "req", "-x509", "-newkey", "rsa:2048", "-nodes",
+    "-keyout", certificateKey, "-out", certificate,
+    "-subj", "/CN=127.0.0.1", "-days", "1"
+  ], { stdio: "ignore" });
+  if (generated.status !== 0) throw new Error("openssl não conseguiu criar o certificado de teste.");
+
+  let channelRequest = null;
+  const channel = tls.createServer({
+    cert: await fs.readFile(certificate),
+    key: await fs.readFile(certificateKey)
+  }, (socket) => {
+    const chunks = [];
+    socket.on("data", (chunk) => chunks.push(chunk));
+    socket.on("end", () => {
+      try { channelRequest = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch {}
+      socket.end("ok");
+    });
+  });
+  await new Promise((resolve) => channel.listen(0, "0.0.0.0", resolve));
+
+  const port = await freePort();
+  const url = "http://127.0.0.1:" + port;
+  const child = spawn(process.execPath, ["src/server.mjs"], {
+    cwd: path.resolve(import.meta.dirname, ".."),
+    env: {
+      ...process.env,
+      HOST: "127.0.0.1",
+      PORT: String(port),
+      DATA_DIR: dataDir,
+      INFORM_URL: url + "/inform",
+      BOOTSTRAP_KEY_FILE: keyFile,
+      ADMIN_PASSWORD: password,
+      DISCOVERY_ENABLED: "0",
+      DISCOVERY_LISTEN_ENABLED: "0",
+      CONTROLLER_CHANNEL_PORT: String(channel.address().port),
+      CONTROLLER_CHANNEL_TIMEOUT_MS: "500"
+    },
+    stdio: ["ignore", "ignore", "pipe"]
+  });
+  t.after(async () => {
+    child.kill("SIGTERM");
+    await new Promise((resolve) => child.once("exit", resolve));
+    await new Promise((resolve) => channel.close(resolve));
+    await fs.rm(dataDir, { recursive: true });
+  });
+  await waitForServer(url, child);
+
+  const login = await fetch(url + "/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password })
+  });
+  const cookie = login.headers.get("set-cookie").split(";", 1)[0];
+  const { csrf } = await login.json();
+  const adopt = (body) => fetch(url + "/api/adopt", {
+    method: "POST",
+    headers: { Cookie: cookie, "Content-Type": "application/json", "X-CSRF-Token": csrf },
+    body: JSON.stringify(body)
+  });
+  const sendInform = async (packetKey, defaults) => {
+    const response = await fetch(url + "/inform", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-binary" },
+      body: encodePacket({
+        model: "USMINI",
+        model_display: "USW Flex Mini",
+        serial: "MANUAL01",
+        version: "2.1.6.762",
+        ip: "127.0.0.1",
+        hostname: "USW-Manual",
+        cfgversion: "manual-factory",
+        default: defaults,
+        port_table: [1, 2, 3, 4, 5].map((port_idx) => ({ port_idx, up: port_idx === 1, is_uplink: port_idx === 1 })),
+        switch_caps: { max_mirror_sessions: 1, vlan_caps: 2 }
+      }, packetKey, { mac })
+    });
+    assert.equal(response.status, 200);
+    return Buffer.from(await response.arrayBuffer());
+  };
+
+  assert.equal((await adopt({ ip: "127.0.0.1" })).status, 409);
+  const invalidIp = await adopt({ ip: "999.1.1.1", mac });
+  assert.equal(invalidIp.status, 400);
+  assert.equal((await invalidIp.json()).code, "INVALID_IP");
+  const invalidMac = await adopt({ ip: "127.0.0.1", mac: "not-a-mac" });
+  assert.equal(invalidMac.status, 400);
+  assert.equal((await invalidMac.json()).code, "INVALID_MAC");
+
+  const accepted = await adopt({ ip: "127.0.0.1", mac });
+  assert.equal(accepted.status, 202);
+  const body = await accepted.json();
+  assert.equal(body.recovery.targetMac, mac);
+  assert.equal(body.recovery.targetIp, "127.0.0.1");
+  await waitUntil(() => channelRequest);
+  assert.equal(channelRequest.type, "adopt");
+  assert.equal(channelRequest.mac, mac);
+  assert.equal(channelRequest.url, url + "/inform");
+  assert.equal(channelRequest.key, null);
+
+  channelRequest = null;
+  const updated = await adopt({ ip: "127.0.0.1", mac });
+  assert.equal(updated.status, 202);
+  const updatedBody = await updated.json();
+  assert.equal(updatedBody.updated, true);
+  assert.equal(updatedBody.recovery.targetIp, "127.0.0.1");
+  await waitUntil(() => channelRequest);
+  assert.equal(channelRequest.mac, mac);
+
+  const factoryReply = decodePacket(await sendInform(DEFAULT_KEY, true), DEFAULT_KEY).payload;
+  assert.equal(factoryReply._type, "setparam");
+  const ownKey = factoryReply.mgmt_cfg.match(/^authkey=([0-9a-f]{32})$/m)?.[1];
+  assert.match(ownKey, /^[0-9a-f]{32}$/);
+  await sendInform(ownKey, false);
+  const state = await (await fetch(url + "/api/state", { headers: { Cookie: cookie } })).json();
+  assert.equal(state.device.adopted, true);
+  assert.equal(state.device.defaultKey, false);
+  assert.equal(state.recovery.status, "complete");
 });
