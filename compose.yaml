@@ -1,0 +1,19 @@
+services:
+  flex-direct:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8789:8080"
+    environment:
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Defina ADMIN_PASSWORD no ficheiro .env}
+      INFORM_URL: ${INFORM_URL:?Defina INFORM_URL no ficheiro .env}
+      SWITCH_MAC: ${SWITCH_MAC:-}
+      AUTO_ADOPT: ${AUTO_ADOPT:-0}
+      BOOTSTRAP_KEY_FILE: ${BOOTSTRAP_KEY_FILE:-}
+      DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

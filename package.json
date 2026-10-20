@@ -1,0 +1,23 @@
+{
+  "name": "usw-flex-mini-direct",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Controlador local experimental para UniFi USW Flex Mini, sem UniFi Network",
+  "homepage": "https://github.com/0raculo/usw-flex-mini-direct#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0raculo/usw-flex-mini-direct.git"
+  },
+  "bugs": {
+    "url": "https://github.com/0raculo/usw-flex-mini-direct/issues"
+  },
+  "scripts": {
+    "start": "node src/server.mjs",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

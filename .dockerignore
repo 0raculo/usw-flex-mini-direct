@@ -1,0 +1,5 @@
+data
+.git
+node_modules
+*.pcap
+*.key

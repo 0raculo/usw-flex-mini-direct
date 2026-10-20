@@ -1,0 +1,7 @@
+data/
+.env
+node_modules/
+*.pcap
+*.key
+*.log
+.DS_Store

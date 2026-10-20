@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="pt-PT">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Flex Mini Direct</title>
+  <link rel="stylesheet" href="/styles.css?v=0.1.0">
+</head>
+<body>
+  <main class="login-shell" id="login-view">
+    <section class="login-card">
+      <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+      <p class="eyebrow">Controlador independente</p>
+      <h1>O seu switch.<br>Sem a nuvem.</h1>
+      <p class="login-copy">Gestão local do USW Flex Mini por uma ligação direta ao equipamento.</p>
+      <form id="login-form">
+        <label for="password">Palavra-passe de administração</label>
+        <div class="field-row">
+          <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+          <button class="button primary" type="submit">Entrar</button>
+        </div>
+        <p class="form-error" id="login-error" role="alert"></p>
+      </form>
+      <div class="login-foot"><span class="pulse"></span><span id="login-device">À procura do switch…</span></div>
+    </section>
+    <aside class="login-aside">
+      <span class="index">01</span>
+      <h2>Um caminho direto entre o browser e o hardware.</h2>
+      <p>Sem UniFi Network, sem conta na nuvem e sem consola. O equipamento fala diretamente com esta aplicação.</p>
+      <div class="route-line"><span>Browser</span><i></i><span>Flex Mini</span></div>
+    </aside>
+  </main>
+
+  <div id="app-view" class="app-shell" hidden>
+    <header class="topbar">
+      <a class="wordmark" href="#"><span class="brand-mark small" aria-hidden="true"><span></span><span></span><span></span><span></span></span><strong>Flex Direct</strong><small>LOCAL CONTROL</small></a>
+      <div class="top-actions">
+        <span class="connection" id="connection-pill"><span class="pulse"></span><span>À espera</span></span>
+        <button class="button quiet" id="refresh-button" type="button">Atualizar</button>
+      </div>
+    </header>
+
+    <main class="dashboard">
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Controlo direto · inform</p>
+          <h1 id="device-title">USW Flex Mini</h1>
+          <p class="hero-copy" id="device-subtitle">A estabelecer comunicação com o equipamento.</p>
+        </div>
+        <div class="device-stamp">
+          <span id="device-ip">—</span>
+          <small id="device-firmware">Firmware —</small>
+        </div>
+      </section>
+
+      <section class="notice" id="adoption-panel" hidden>
+        <div>
+          <span class="notice-label">Ação necessária</span>
+          <h2>Adotar diretamente nesta aplicação</h2>
+          <p>O switch vai passar a enviar os seus informes para <code id="adopt-url"></code>. A ligação atual à UniFi será substituída.</p>
+        </div>
+        <button class="button dark" id="adopt-button" type="button">Adotar neste controlador</button>
+      </section>
+
+      <section class="metrics" aria-label="Estado do equipamento">
+        <article><span>Estado</span><strong id="metric-state">—</strong><small id="metric-seen">Último contacto</small></article>
+        <article><span>Modelo</span><strong id="metric-model">—</strong><small id="metric-serial">Número de série</small></article>
+        <article><span>Uplink</span><strong id="metric-uplink">—</strong><small>Porta de gestão protegida</small></article>
+        <article><span>Configuração</span><strong id="metric-config">Local</strong><small id="metric-operation">Sem operações pendentes</small></article>
+      </section>
+
+      <section class="workbench">
+        <div class="section-head">
+          <div><p class="eyebrow">Camada 2</p><h2>VLANs por porta</h2></div>
+          <p>Cada porta funciona como acesso a uma única VLAN. O uplink mantém a VLAN 1 para preservar a gestão.</p>
+        </div>
+        <div class="port-list" id="port-list"></div>
+      </section>
+
+      <section class="mirror-panel">
+        <div>
+          <p class="eyebrow">Diagnóstico</p>
+          <h2>Espelhamento de porta</h2>
+          <p>Copia o tráfego de uma porta para outra sem interromper o tráfego original.</p>
+        </div>
+        <div class="mirror-controls">
+          <label>Porta de origem<select id="mirror-source"></select></label>
+          <span class="arrow" aria-hidden="true">→</span>
+          <label>Porta de destino<select id="mirror-target"></select></label>
+        </div>
+      </section>
+
+      <section class="capability-grid">
+        <article class="supported"><span class="status-dot"></span><div><strong>VLAN de acesso</strong><p>Configuração de PVID por porta, validada no hardware.</p></div><b>Suportado</b></article>
+        <article class="supported"><span class="status-dot"></span><div><strong>Port mirroring</strong><p>Uma sessão de cópia de tráfego para observação.</p></div><b>Suportado</b></article>
+        <article><span class="status-dot"></span><div><strong>STP / RSTP</strong><p>O USW Flex Mini não implementa spanning tree, apesar de a UI UniFi o apresentar.</p></div><b>Não suportado</b></article>
+        <article><span class="status-dot"></span><div><strong>IGMP e VLANs marcadas</strong><p>O controlador rejeita modos trunk neste modelo; não há snooping configurável.</p></div><b>Não suportado</b></article>
+      </section>
+
+      <section class="action-bar" id="action-bar" hidden>
+        <div><strong>Alterações por aplicar</strong><p id="action-count">—</p></div>
+        <div>
+          <button class="button quiet" id="discard-button" type="button">Descartar</button>
+          <button class="button primary" id="preview-button" type="button">Rever alterações</button>
+        </div>
+      </section>
+
+      <section class="review-panel" id="review-panel" hidden>
+        <div class="section-head"><div><p class="eyebrow">Confirmação</p><h2>Alterações a enviar</h2></div><button class="icon-button" id="close-review" type="button" aria-label="Fechar">×</button></div>
+        <ul id="change-list"></ul>
+        <div class="confirmation">
+          <p>É criado um snapshot antes de enviar. A aplicação só confirma a alteração quando o switch devolve a nova versão de configuração.</p>
+          <button class="button dark" id="apply-button" type="button">Aplicar no switch</button>
+        </div>
+      </section>
+
+      <section class="history">
+        <div class="section-head"><div><p class="eyebrow">Histórico</p><h2>Snapshots</h2></div></div>
+        <div id="snapshot-list" class="snapshot-list"><p class="muted">Ainda não existem alterações.</p></div>
+      </section>
+    </main>
+
+    <footer><span>Flex Direct 0.1</span><span>Comunicação local · sem telemetria</span></footer>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js?v=0.1.0" type="module"></script>
+</body>
+</html>
